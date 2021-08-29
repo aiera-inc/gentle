@@ -1,4 +1,4 @@
-FROM ubuntu:18.04
+FROM nvcr.io/nvidia/kaldi:20.11-py3
 
 RUN DEBIAN_FRONTEND=noninteractive && \
 	apt-get update && \
@@ -22,8 +22,8 @@ RUN export MAKEFLAGS=' -j8' &&  cd /gentle/ext && \
 	make depend && make && rm -rf kaldi *.o
 
 ADD . /gentle
-RUN cd /gentle && python3 setup.py develop
 RUN cd /gentle && ./install_models.sh
+RUN cd /gentle && python3 setup.py develop
 
 EXPOSE 8765
 

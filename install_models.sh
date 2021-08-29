@@ -8,7 +8,7 @@ download_models() {
 	local version="$1"
 	local filename="kaldi-models-$version.zip"
 	local url="https://lowerquality.com/gentle/$filename"
-	wget -O $filename $url
+	wget -O $filename $url --no-check-certificate
 	unzip $filename
 	rm $filename
 }

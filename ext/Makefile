@@ -6,7 +6,7 @@ include $(KALDI_BASE)kaldi.mk
 
 BINFILES = k3 m3
 
-OBJFILES = 
+OBJFILES =
 
 CXXFLAGS += -I$(KALDI_BASE) -O3 -DNDEBUG
 

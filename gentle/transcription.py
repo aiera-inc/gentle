@@ -88,9 +88,9 @@ class Transcription:
         options.update(kwargs)
 
         container = {}
-        if self.transcript:
-            container['transcript'] = self.transcript
-        if self.words: 
+        # if self.transcript:
+        #     container['transcript'] = self.transcript
+        if self.words:
             container['words'] = [word.as_dict(without="duration") for word in self.words]
         return json.dumps(container, **options)
 
