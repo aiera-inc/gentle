@@ -12,8 +12,8 @@ from urllib.parse import urlparse
 from redis import Redis
 from twisted.internet import reactor, threads
 from twisted.web._responses import FOUND
-from twisted.web.resource import Resource
-from twisted.web.server import Site, NOT_DONE_YET
+from twisted.web.resource import Resource, EncodingResourceWrapper
+from twisted.web.server import Site, NOT_DONE_YET, GzipEncoderFactory
 from twisted.web.static import File
 
 import gentle
@@ -303,7 +303,10 @@ def serve(port=8765, interface='0.0.0.0', installSignalHandlers=0, nthreads=4, n
     trans_zippr = TranscriptionZipper(zip_dir, trans)
     f.putChild(b'zip', trans_zippr)
 
-    s = Site(f)
+    wrapped = EncodingResourceWrapper(f, [GzipEncoderFactory()])
+
+    s = Site(wrapped)
+
     logging.info("about to listen")
     reactor.listenTCP(port, s, interface=interface)
     logging.info("listening")
@@ -324,8 +327,7 @@ if __name__=='__main__':
                         help='number of alignment threads')
     parser.add_argument('--ntranscriptionthreads', default=2, type=int,
                         help='number of full-transcription threads (memory intensive)')
-    parser.add_argument('--redis', default="redis://host.docker.internal:6379",
-                        help='redis url')
+    parser.add_argument('--redis', help='redis url')
     parser.add_argument('--log', default="INFO",
                         help='the log level (DEBUG, INFO, WARNING, ERROR, or CRITICAL)')
 
@@ -334,10 +336,14 @@ if __name__=='__main__':
     log_level = args.log.upper()
     logging.getLogger().setLevel(log_level)
 
+    redis_url = args.redis
+    if not redis_url:
+        redis_url = os.environ.get("REDIS_URL", "redis://host.docker.internal:6379")
+
     logging.info('gentle %s' % (gentle.__version__))
-    logging.info('listening at %s:%d\n' % (args.host, args.port))
-    logging.info('redis %s\n' % (args.redis))
+    logging.info('listening at %s:%d' % (args.host, args.port))
+    logging.info('redis %s\n' % redis_url)
 
     serve(args.port, args.host, nthreads=args.nthreads,
           ntranscriptionthreads=args.ntranscriptionthreads, installSignalHandlers=1,
-          redis_url=args.redis)
+          redis_url=redis_url)
