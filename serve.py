@@ -56,7 +56,7 @@ class Transcriber():
             socket_timeout=10,
             socket_connect_timeout=10,
             ssl=True if parsed_redis_url.password else False,
-            decode_responses=True,
+            decode_responses=False,
         )
 
         self.nthreads = nthreads
