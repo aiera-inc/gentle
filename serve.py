@@ -103,12 +103,16 @@ class Transcriber():
 
         outdir = os.path.join(self.data_dir, 'transcriptions', uid)
 
-        tran_path = os.path.join(outdir, 'transcript.txt')
-        with open(tran_path, 'w') as tranfile:
-            tranfile.write(transcript)
-        audio_path = os.path.join(outdir, 'upload')
-        with open(audio_path, 'wb') as wavfile:
-            wavfile.write(audio)
+        try:
+            tran_path = os.path.join(outdir, 'transcript.txt')
+            with open(tran_path, 'w') as tranfile:
+                tranfile.write(transcript)
+            audio_path = os.path.join(outdir, 'upload')
+            with open(audio_path, 'wb') as wavfile:
+                wavfile.write(audio)
+        except:
+            self.update_status(uid, status, {'status': 'ERROR'})
+            raise
 
         self.update_status(uid, status, {'status': 'ENCODING'})
 
