@@ -79,7 +79,7 @@ class Transcriber():
 
     def update_status(self, uid, status: dict, updates: dict):
         status.update(updates)
-        self.redis.setex(f'job:{uid}', timedelta(days=30), json.dumps(status))
+        self.redis.setex(f'job:{uid}', timedelta(days=1), json.dumps(status))
 
     def out_dir(self, uid):
         return os.path.join(self.data_dir, 'transcriptions', uid)
@@ -89,7 +89,7 @@ class Transcriber():
         uid = None
         while uid is None or self.redis.exists(f'job:{uid}'):
             uid = uuid.uuid4().hex
-        self.redis.setex(f'job:{uid}', timedelta(days=30), json.dumps({'status': 'STARTED'}))
+        self.redis.setex(f'job:{uid}', timedelta(days=1), json.dumps({'status': 'STARTED'}))
         return uid
 
     def transcribe(self, uid, transcript, audio, async_mode, **kwargs):
@@ -103,12 +103,16 @@ class Transcriber():
 
         outdir = os.path.join(self.data_dir, 'transcriptions', uid)
 
-        tran_path = os.path.join(outdir, 'transcript.txt')
-        with open(tran_path, 'w') as tranfile:
-            tranfile.write(transcript)
-        audio_path = os.path.join(outdir, 'upload')
-        with open(audio_path, 'wb') as wavfile:
-            wavfile.write(audio)
+        try:
+            tran_path = os.path.join(outdir, 'transcript.txt')
+            with open(tran_path, 'w') as tranfile:
+                tranfile.write(transcript)
+            audio_path = os.path.join(outdir, 'upload')
+            with open(audio_path, 'wb') as wavfile:
+                wavfile.write(audio)
+        except:
+            self.update_status(uid, status, {'status': 'ERROR'})
+            raise
 
         self.update_status(uid, status, {'status': 'ENCODING'})
 
@@ -160,7 +164,7 @@ class Transcriber():
             jsfile.write(json_data)
 
             compressed = gzip.compress(json_data.encode('utf8'))
-            self.redis.setex(f'job:{uid}:alignment', timedelta(days=30), compressed)
+            self.redis.setex(f'job:{uid}:alignment', timedelta(days=1), compressed)
 
         with open(os.path.join(outdir, 'align.csv'), 'w') as csvfile:
             csvfile.write(output.to_csv())
