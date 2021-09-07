@@ -27,7 +27,7 @@ RUN DEBIAN_FRONTEND=noninteractive && \
 		ffmpeg \
 		python3.9 python3.9-dev \
 		python python-dev python-pip \
-		wget unzip && \
+		wget unzip patch && \
 	apt-get clean
 
 ADD ext /gentle/ext
