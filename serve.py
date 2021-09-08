@@ -102,7 +102,7 @@ class Watchdog:
             p.execute()
 
     def get_num_connected(self, server_id) -> int:
-        return self.redis.pubsub_numsub(self.pubsub_channel)[0][1]
+        return self.redis.pubsub_numsub(f'{self.prefix}:server:{server_id}')[0][1]
 
 
 class Transcriber():
@@ -373,6 +373,8 @@ def serve(port=8765, interface='0.0.0.0', installSignalHandlers=0, nthreads=4, n
 
     trans_zippr = TranscriptionZipper(zip_dir, trans)
     f.putChild(b'zip', trans_zippr)
+
+    trans_ctrl.putChild(b"num_active_jobs", TranscriptionNumActiveJobs(trans))
 
     wrapped = EncodingResourceWrapper(f, [GzipEncoderFactory()])
 
