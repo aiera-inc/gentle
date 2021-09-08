@@ -43,8 +43,56 @@ class TranscriptionAlignment(Resource):
         return json.dumps(self.transcriber.get_alignment(self.uid)).encode()
 
 
+class Watchdog:
+    def __init__(self, redis: Redis, prefix: str):
+        self.redis = redis
+        self.prefix = prefix
+
+        self.server_id = uuid.uuid4().hex
+        self.servers_key = f'{self.prefix}:servers'
+        self.server_tracked_keys_key = f'{self.prefix}:server:{self.server_id}:keys'
+        self.pubsub_channel = f'{self.prefix}:server:{self.server_id}'
+
+        # subscribe to a channel for this server, this just serves to increment
+        # a subscriber count we can use to see if this server is still alive
+        self.pubsub = self.redis.pubsub()
+        self.pubsub.subscribe(self.pubsub_channel)
+        self.redis.sadd(self.servers_key, self.server_id)
+
+    def track(self, key):
+        # associate the key to the current servers up-state
+        self.redis.sadd(self.server_tracked_keys_key, key)
+
+    def untrack(self, key):
+        # disassociate the key to the current servers up-state
+        self.redis.srem(self.server_tracked_keys_key, key)
+
+    def purge(self):
+        # loop over all the servers seeing if they are alive
+        for server_id in self.redis.smembers(self.servers_key):
+            server_id = server_id.decode()
+            if server_id != self.server_id and self.get_num_connected(server_id) == 0:
+                # check how many subscribers there are on the servers channel.
+                # there will be 1 if the server is up, or 0 if not.
+                self.purge_server(server_id)
+
+    def purge_server(self, server_id):
+        # purge the keys being tracked, and the server id in general from redis
+        with self.redis.pipeline() as p:
+            for key in self.redis.smembers(self.server_tracked_keys_key):
+                logging.info('PURGING KEY %s, SERVER ID MISSING', key)
+                p.delete(key.decode())
+
+            p.delete(self.server_tracked_keys_key)
+            p.srem(self.servers_key, server_id)
+            p.execute()
+
+    def get_num_connected(self, server_id) -> int:
+        return self.redis.pubsub_numsub(self.pubsub_channel)[0][1]
+
+
 class Transcriber():
-    def __init__(self, data_dir, nthreads=4, ntranscriptionthreads=2, redis_url="redis://localhost:6379"):
+    def __init__(self, data_dir, nthreads=4, ntranscriptionthreads=2, redis_url='redis://localhost:6379'):
         self.data_dir = data_dir
 
         parsed_redis_url = urlparse(redis_url)
@@ -59,6 +107,8 @@ class Transcriber():
             decode_responses=False,
         )
 
+        self.server_watchdog = Watchdog(self.redis, 'gentle-watchdog')
+
         self.nthreads = nthreads
         self.ntranscriptionthreads = ntranscriptionthreads
         self.resources = gentle.Resources()
@@ -67,11 +117,12 @@ class Transcriber():
         self._status_dicts = {}
 
     def get_status(self, uid):
-        data = self.redis.get(f'job:{uid}')
+        self.server_watchdog.purge()
+        data = self.redis.get(f'gentle:job:{uid}')
         return json.loads(data) if data else {}
 
     def get_alignment(self, uid):
-        data = self.redis.get(f'job:{uid}:alignment')
+        data = self.redis.get(f'gentle:job:{uid}:alignment')
         if data:
             data = gzip.decompress(data)
             return json.loads(data)
@@ -79,7 +130,12 @@ class Transcriber():
 
     def update_status(self, uid, status: dict, updates: dict):
         status.update(updates)
-        self.redis.setex(f'job:{uid}', timedelta(days=1), json.dumps(status))
+        self.redis.setex(f'gentle:job:{uid}', timedelta(days=1), json.dumps(status))
+
+        if status.get('status') in ('ERROR', 'OK'):
+            self.server_watchdog.untrack(f'gentle:job:{uid}')
+        else:
+            self.server_watchdog.track(f'gentle:job:{uid}')
 
     def out_dir(self, uid):
         return os.path.join(self.data_dir, 'transcriptions', uid)
@@ -87,9 +143,10 @@ class Transcriber():
     # TODO(maxhawkins): refactor so this is returned by transcribe()
     def next_id(self):
         uid = None
-        while uid is None or self.redis.exists(f'job:{uid}'):
+        while uid is None or self.redis.exists(f'gentle:job:{uid}'):
             uid = uuid.uuid4().hex
-        self.redis.setex(f'job:{uid}', timedelta(days=1), json.dumps({'status': 'STARTED'}))
+
+        self.update_status(uid, {}, {'status': 'STARTED'})
         return uid
 
     def transcribe(self, uid, transcript, audio, async_mode, **kwargs):
@@ -164,14 +221,14 @@ class Transcriber():
             jsfile.write(json_data)
 
             compressed = gzip.compress(json_data.encode('utf8'))
-            self.redis.setex(f'job:{uid}:alignment', timedelta(days=1), compressed)
+            self.redis.setex(f'gentle:job:{uid}:alignment', timedelta(days=1), compressed)
 
         with open(os.path.join(outdir, 'align.csv'), 'w') as csvfile:
             csvfile.write(output.to_csv())
 
         # Inline the alignment into the index.html file.
         htmltxt = open(get_resource('www/view_alignment.html')).read()
-        htmltxt = htmltxt.replace("var INLINE_JSON;", "var INLINE_JSON=%s;" % (output.to_json()));
+        htmltxt = htmltxt.replace("var INLINE_JSON;", "var INLINE_JSON=%s;" % (output.to_json()))
         open(os.path.join(outdir, 'index.html'), 'w').write(htmltxt)
 
         self.update_status(uid, status, {'status': 'OK'})
