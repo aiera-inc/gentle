@@ -17,6 +17,7 @@ from twisted.web.server import Site, NOT_DONE_YET, GzipEncoderFactory
 from twisted.web.static import File
 
 import gentle
+import logconfig
 from gentle.util.cyst import Insist
 from gentle.util.paths import get_resource, get_datadir
 
@@ -212,7 +213,6 @@ class Transcriber():
             })
 
             def on_progress(p):
-                print(p)
                 for k,v in p.items():
                     self.update_status(uid, status, {k: v})
 
@@ -404,6 +404,7 @@ if __name__=='__main__':
 
     args = parser.parse_args()
 
+    logconfig.configure_logging()
     log_level = args.log.upper()
     logging.getLogger().setLevel(log_level)
 

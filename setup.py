@@ -15,6 +15,6 @@ setup(
     author='Robert M Ochshorn',
     license='MIT',
     packages=['gentle'],
-    install_requires=['twisted', 'redis'],
+    install_requires=['twisted', 'redis', 'python-json-logger'],
     test_suite='tests',
 )
