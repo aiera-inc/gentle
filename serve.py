@@ -186,56 +186,45 @@ class Transcriber():
                 json.dump(status, jsfile, indent=2)
             return
 
-        #XXX: Maybe we should pass this wave object instead of the
-        # file path to align_progress
-        wav_obj = wave.open(wavfile, 'rb')
-        self.update_status(uid, status, {
-            'status': 'TRANSCRIBING', 'duration': wav_obj.getnframes() / float(wav_obj.getframerate())
-        })
-
-        def on_progress(p):
-            print(p)
-            for k,v in p.items():
-                self.update_status(uid, status, {k: v})
-
-        if len(transcript.strip()) > 0:
-            trans = gentle.ForcedAligner(self.resources, transcript, nthreads=self.nthreads, **kwargs)
-        elif self.full_transcriber.available:
-            trans = self.full_transcriber
-        else:
+        try:
+            #XXX: Maybe we should pass this wave object instead of the
+            # file path to align_progress
+            wav_obj = wave.open(wavfile, 'rb')
             self.update_status(uid, status, {
-                'status': 'ERROR',
-                'error': 'No transcript provided and no language model for full transcription'
+                'status': 'TRANSCRIBING', 'duration': wav_obj.getnframes() / float(wav_obj.getframerate())
             })
 
-            return
+            def on_progress(p):
+                print(p)
+                for k,v in p.items():
+                    self.update_status(uid, status, {k: v})
 
-        output = trans.transcribe(wavfile, progress_cb=on_progress, logging=logging)
+            if len(transcript.strip()) > 0:
+                trans = gentle.ForcedAligner(self.resources, transcript, nthreads=self.nthreads, **kwargs)
+            elif self.full_transcriber.available:
+                trans = self.full_transcriber
+            else:
+                self.update_status(uid, status, {
+                    'status': 'ERROR',
+                    'error': 'No transcript provided and no language model for full transcription'
+                })
 
-        # ...remove the original upload
-        os.unlink(os.path.join(outdir, 'upload'))
+                return
 
-        # Save
-        with open(os.path.join(outdir, 'align.json'), 'w') as jsfile:
+            output = trans.transcribe(wavfile, progress_cb=on_progress, logging=logging)
+
+            # Save
             json_data = output.to_json(indent=2)
-            jsfile.write(json_data)
-
             compressed = gzip.compress(json_data.encode('utf8'))
             self.redis.setex(f'gentle:job:{uid}:alignment', timedelta(days=1), compressed)
 
-        with open(os.path.join(outdir, 'align.csv'), 'w') as csvfile:
-            csvfile.write(output.to_csv())
+            self.update_status(uid, status, {'status': 'OK'})
 
-        # Inline the alignment into the index.html file.
-        htmltxt = open(get_resource('www/view_alignment.html')).read()
-        htmltxt = htmltxt.replace("var INLINE_JSON;", "var INLINE_JSON=%s;" % (output.to_json()))
-        open(os.path.join(outdir, 'index.html'), 'w').write(htmltxt)
-
-        self.update_status(uid, status, {'status': 'OK'})
-
-        logging.info('done with transcription.')
-
-        return output
+            logging.info('done with transcription.')
+            return output
+        finally:
+            os.unlink(wavfile)
+            os.unlink(os.path.join(outdir, 'upload'))
 
 
 class TranscriptionsController(Resource):
