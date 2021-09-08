@@ -102,7 +102,7 @@ class Watchdog:
             p.execute()
 
     def get_num_connected(self, server_id) -> int:
-        return self.redis.pubsub_numsub(self.pubsub_channel)[0][1]
+        return self.redis.pubsub_numsub(f'{self.prefix}:server:{server_id}')[0][1]
 
 
 class Transcriber():
