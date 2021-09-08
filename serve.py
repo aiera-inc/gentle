@@ -32,6 +32,16 @@ class TranscriptionStatus(Resource):
         return json.dumps(self.transcriber.get_status(self.uid)).encode()
 
 
+class TranscriptionNumActiveJobs(Resource):
+    def __init__(self, transcriber):
+        self.transcriber = transcriber
+        Resource.__init__(self)
+
+    def render_GET(self, req):
+        req.setHeader(b"Content-Type", "application/json")
+        return json.dumps(self.transcriber.get_num_active_jobs()).encode()
+
+
 class TranscriptionAlignment(Resource):
     def __init__(self, transcriber, uid):
         self.transcriber = transcriber
@@ -66,6 +76,9 @@ class Watchdog:
     def untrack(self, key):
         # disassociate the key to the current servers up-state
         self.redis.srem(self.server_tracked_keys_key, key)
+
+    def get_num_tracked(self):
+        return self.redis.scard(self.server_tracked_keys_key)
 
     def purge(self):
         # loop over all the servers seeing if they are alive
@@ -115,6 +128,10 @@ class Transcriber():
 
         self.full_transcriber = gentle.FullTranscriber(self.resources, nthreads=ntranscriptionthreads)
         self._status_dicts = {}
+
+    def get_num_active_jobs(self):
+        self.server_watchdog.purge()
+        return self.server_watchdog.get_num_tracked()
 
     def get_status(self, uid):
         self.server_watchdog.purge()
@@ -246,6 +263,10 @@ class TranscriptionsController(Resource):
         trans_alignment = TranscriptionAlignment(self.transcriber, uid)
         # noinspection PyTypeChecker
         trans_ctrl.putChild(b"alignment", trans_alignment)
+
+        trans_num_active = TranscriptionNumActiveJobs(self.transcriber)
+        # noinspection PyTypeChecker
+        trans_ctrl.putChild(b"num_active_jobs", trans_num_active)
 
         return trans_ctrl
 
