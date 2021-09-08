@@ -93,11 +93,12 @@ class Watchdog:
     def purge_server(self, server_id):
         # purge the keys being tracked, and the server id in general from redis
         with self.redis.pipeline() as p:
-            for key in self.redis.smembers(self.server_tracked_keys_key):
+            server_tracked_keys_key = f'{self.prefix}:server:{server_id}:keys'
+            for key in self.redis.smembers(server_tracked_keys_key):
                 logging.info('PURGING KEY %s, SERVER ID MISSING', key)
                 p.delete(key.decode())
 
-            p.delete(self.server_tracked_keys_key)
+            p.delete(server_tracked_keys_key)
             p.srem(self.servers_key, server_id)
             p.execute()
 
