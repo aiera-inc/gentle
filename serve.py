@@ -212,7 +212,6 @@ class Transcriber():
             })
 
             def on_progress(p):
-                print(p)
                 for k,v in p.items():
                     self.update_status(uid, status, {k: v})
 
