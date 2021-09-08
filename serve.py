@@ -374,6 +374,8 @@ def serve(port=8765, interface='0.0.0.0', installSignalHandlers=0, nthreads=4, n
     trans_zippr = TranscriptionZipper(zip_dir, trans)
     f.putChild(b'zip', trans_zippr)
 
+    trans_ctrl.putChild(b"num_active_jobs", TranscriptionNumActiveJobs(trans))
+
     wrapped = EncodingResourceWrapper(f, [GzipEncoderFactory()])
 
     s = Site(wrapped)
