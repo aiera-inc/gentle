@@ -206,7 +206,7 @@ class Transcriber():
             return
 
         try:
-            #XXX: Maybe we should pass this wave object instead of the
+            # XXX: Maybe we should pass this wave object instead of the
             # file path to align_progress
             wav_obj = wave.open(wavfile, 'rb')
             self.update_status(uid, status, {
@@ -240,6 +240,12 @@ class Transcriber():
 
             logging.info('done with transcription.')
             return output
+        except Exception as e:
+            self.update_status(uid, status, {
+                'status': 'ERROR',
+                'error': str(e)
+            })
+            logging.exception("error transcribing job %s", uid)
         finally:
             os.unlink(wavfile)
             os.unlink(os.path.join(outdir, 'upload'))
