@@ -1,17 +1,19 @@
 import math
 import logging
 import wave
+from datetime import timedelta
 
 from gentle import transcription
+from gentle.util import work
 
-from multiprocessing.pool import ThreadPool as Pool
 
 class MultiThreadedTranscriber:
-    def __init__(self, kaldi_queue, chunk_len=20, overlap_t=2, nthreads=4):
+    def __init__(self, uid, kaldi_queue, chunk_len=20, overlap_t=2, nthreads=4):
+        self.uid = uid
         self.chunk_len = chunk_len
         self.overlap_t = overlap_t
         self.nthreads = nthreads
-            
+
         self.kaldi_queue = kaldi_queue
 
     def transcribe(self, wavfile, progress_cb=None):
@@ -20,7 +22,6 @@ class MultiThreadedTranscriber:
         n_chunks = int(math.ceil(duration / float(self.chunk_len - self.overlap_t)))
 
         chunks = []
-
 
         def transcribe_chunk(idx):
             wav_obj = wave.open(wavfile, 'rb')
@@ -31,7 +32,7 @@ class MultiThreadedTranscriber:
             buf = wav_obj.readframes(int(self.chunk_len * wav_obj.getframerate()))
 
             if len(buf) < 4000:
-                logging.info('Short segment - ignored %d' % (idx))
+                logging.info('Short segment - ignored %d for job %s' % (idx, self.uid))
                 ret = []
             else:
                 k = self.kaldi_queue.get()
@@ -41,16 +42,17 @@ class MultiThreadedTranscriber:
                 self.kaldi_queue.put(k)
 
             chunks.append({"start": start_t, "words": ret})
-            logging.info('%d/%d' % (len(chunks), n_chunks))
+            logging.info('chunk %d of %d for job %s' % (len(chunks), n_chunks, self.uid))
             if progress_cb is not None:
                 progress_cb({"message": ' '.join([X['word'] for X in ret]),
                              "percent": len(chunks) / float(n_chunks)})
 
+        try:
+            work(min(n_chunks, self.nthreads), transcribe_chunk, range(n_chunks), timedelta(hours=1))
+        except Exception:
+            logging.exception("error transcribing job %s in worker threads", self.uid)
+            raise
 
-        pool = Pool(min(n_chunks, self.nthreads))
-        pool.map(transcribe_chunk, range(n_chunks))
-        pool.close()
-        
         chunks.sort(key=lambda x: x['start'])
 
         # Combine chunks
@@ -85,17 +87,15 @@ class MultiThreadedTranscriber:
         # word in the audio.
         words.sort(key=lambda word: word.start)
         words.append(transcription.Word(word="__dummy__"))
-        words = [words[i] for i in range(len(words)-1) if not words[i].corresponds(words[i+1])]
+        words = [words[i] for i in range(len(words) - 1) if not words[i].corresponds(words[i + 1])]
 
         return words, duration
 
 
-if __name__=='__main__':
+if __name__ == '__main__':
     # full transcription
-    import json
     import sys
 
-    import logging
     logging.getLogger().setLevel('INFO')
 
     import gentle
@@ -105,10 +105,9 @@ if __name__=='__main__':
     resources = gentle.Resources()
 
     k_queue = kaldi_queue.build(resources, 3)
-    trans = MultiThreadedTranscriber(k_queue)
+    trans = MultiThreadedTranscriber("xxx", k_queue)
 
     with gentle.resampled(sys.argv[1]) as filename:
         words, duration = trans.transcribe(filename)
 
     open(sys.argv[2], 'w').write(transcription.Transcription(words=words).to_json())
-

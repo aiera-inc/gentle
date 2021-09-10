@@ -17,6 +17,7 @@ from twisted.web.server import Site, NOT_DONE_YET, GzipEncoderFactory
 from twisted.web.static import File
 
 import gentle
+import logconfig
 from gentle.util.cyst import Insist
 from gentle.util.paths import get_resource, get_datadir
 
@@ -30,6 +31,16 @@ class TranscriptionStatus(Resource):
     def render_GET(self, req):
         req.setHeader(b"Content-Type", "application/json")
         return json.dumps(self.transcriber.get_status(self.uid)).encode()
+
+
+class TranscriptionNumActiveJobs(Resource):
+    def __init__(self, transcriber):
+        self.transcriber = transcriber
+        Resource.__init__(self)
+
+    def render_GET(self, req):
+        req.setHeader(b"Content-Type", "application/json")
+        return json.dumps(self.transcriber.get_num_active_jobs()).encode()
 
 
 class TranscriptionAlignment(Resource):
@@ -67,6 +78,9 @@ class Watchdog:
         # disassociate the key to the current servers up-state
         self.redis.srem(self.server_tracked_keys_key, key)
 
+    def get_num_tracked(self):
+        return self.redis.scard(self.server_tracked_keys_key)
+
     def purge(self):
         # loop over all the servers seeing if they are alive
         for server_id in self.redis.smembers(self.servers_key):
@@ -79,16 +93,18 @@ class Watchdog:
     def purge_server(self, server_id):
         # purge the keys being tracked, and the server id in general from redis
         with self.redis.pipeline() as p:
-            for key in self.redis.smembers(self.server_tracked_keys_key):
+            server_tracked_keys_key = f'{self.prefix}:server:{server_id}:keys'
+            for key in self.redis.smembers(server_tracked_keys_key):
+                key = key.decode()
                 logging.info('PURGING KEY %s, SERVER ID MISSING', key)
-                p.delete(key.decode())
+                p.delete(key)
 
-            p.delete(self.server_tracked_keys_key)
+            p.delete(server_tracked_keys_key)
             p.srem(self.servers_key, server_id)
             p.execute()
 
     def get_num_connected(self, server_id) -> int:
-        return self.redis.pubsub_numsub(self.pubsub_channel)[0][1]
+        return self.redis.pubsub_numsub(f'{self.prefix}:server:{server_id}')[0][1]
 
 
 class Transcriber():
@@ -115,6 +131,10 @@ class Transcriber():
 
         self.full_transcriber = gentle.FullTranscriber(self.resources, nthreads=ntranscriptionthreads)
         self._status_dicts = {}
+
+    def get_num_active_jobs(self):
+        self.server_watchdog.purge()
+        return self.server_watchdog.get_num_tracked()
 
     def get_status(self, uid):
         self.server_watchdog.purge()
@@ -187,7 +207,7 @@ class Transcriber():
             return
 
         try:
-            #XXX: Maybe we should pass this wave object instead of the
+            # XXX: Maybe we should pass this wave object instead of the
             # file path to align_progress
             wav_obj = wave.open(wavfile, 'rb')
             self.update_status(uid, status, {
@@ -195,12 +215,11 @@ class Transcriber():
             })
 
             def on_progress(p):
-                print(p)
                 for k,v in p.items():
                     self.update_status(uid, status, {k: v})
 
             if len(transcript.strip()) > 0:
-                trans = gentle.ForcedAligner(self.resources, transcript, nthreads=self.nthreads, **kwargs)
+                trans = gentle.ForcedAligner(uid, self.resources, transcript, nthreads=self.nthreads, **kwargs)
             elif self.full_transcriber.available:
                 trans = self.full_transcriber
             else:
@@ -222,13 +241,19 @@ class Transcriber():
 
             logging.info('done with transcription.')
             return output
+        except Exception as e:
+            self.update_status(uid, status, {
+                'status': 'ERROR',
+                'error': str(e)
+            })
+            logging.exception("error transcribing job %s", uid)
         finally:
             os.unlink(wavfile)
             os.unlink(os.path.join(outdir, 'upload'))
 
 
 class TranscriptionsController(Resource):
-    def __init__(self, transcriber):
+    def __init__(self, transcriber: Transcriber):
         Resource.__init__(self)
         self.transcriber = transcriber
 
@@ -246,6 +271,10 @@ class TranscriptionsController(Resource):
         trans_alignment = TranscriptionAlignment(self.transcriber, uid)
         # noinspection PyTypeChecker
         trans_ctrl.putChild(b"alignment", trans_alignment)
+
+        trans_num_active = TranscriptionNumActiveJobs(self.transcriber)
+        # noinspection PyTypeChecker
+        trans_ctrl.putChild(b"num_active_jobs", trans_num_active)
 
         return trans_ctrl
 
@@ -353,6 +382,8 @@ def serve(port=8765, interface='0.0.0.0', installSignalHandlers=0, nthreads=4, n
     trans_zippr = TranscriptionZipper(zip_dir, trans)
     f.putChild(b'zip', trans_zippr)
 
+    trans_ctrl.putChild(b"num_active_jobs", TranscriptionNumActiveJobs(trans))
+
     wrapped = EncodingResourceWrapper(f, [GzipEncoderFactory()])
 
     s = Site(wrapped)
@@ -383,6 +414,7 @@ if __name__=='__main__':
 
     args = parser.parse_args()
 
+    logconfig.configure_logging()
     log_level = args.log.upper()
     logging.getLogger().setLevel(log_level)
 

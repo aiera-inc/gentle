@@ -12,7 +12,7 @@ parser.add_argument(
         '--nthreads', default=multiprocessing.cpu_count(), type=int,
         help='number of alignment threads')
 parser.add_argument(
-        '-o', '--output', metavar='output', type=str, 
+        '-o', '--output', metavar='output', type=str,
         help='output filename')
 parser.add_argument(
         '--conservative', dest='conservative', action='store_true',
@@ -51,7 +51,7 @@ logging.info("converting audio to 8K sampled wav")
 
 with gentle.resampled(args.audiofile) as wavfile:
     logging.info("starting alignment")
-    aligner = gentle.ForcedAligner(resources, transcript, nthreads=args.nthreads, disfluency=args.disfluency, conservative=args.conservative, disfluencies=disfluencies)
+    aligner = gentle.ForcedAligner("cli", resources, transcript, nthreads=args.nthreads, disfluency=args.disfluency, conservative=args.conservative, disfluencies=disfluencies)
     result = aligner.transcribe(wavfile, progress_cb=on_progress, logging=logging)
 
 fh = open(args.output, 'w', encoding="utf-8") if args.output else sys.stdout
