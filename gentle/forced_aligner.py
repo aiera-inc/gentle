@@ -8,7 +8,8 @@ from gentle.transcription import Transcription
 
 class ForcedAligner():
 
-    def __init__(self, resources, transcript, nthreads=4, **kwargs):
+    def __init__(self, uid, resources, transcript, nthreads=4, **kwargs):
+        self.uid = uid
         self.kwargs = kwargs
         self.nthreads = nthreads
         self.transcript = transcript
@@ -17,7 +18,7 @@ class ForcedAligner():
         ks = self.ms.get_kaldi_sequence()
         gen_hclg_filename = language_model.make_bigram_language_model(ks, resources.proto_langdir, **kwargs)
         self.queue = kaldi_queue.build(resources, hclg_path=gen_hclg_filename, nthreads=nthreads)
-        self.mtt = MultiThreadedTranscriber(self.queue, nthreads=nthreads)
+        self.mtt = MultiThreadedTranscriber(uid, self.queue, nthreads=nthreads)
 
     def transcribe(self, wavfile, progress_cb=None, logging=None):
         words, duration = self.mtt.transcribe(wavfile, progress_cb=progress_cb)
@@ -32,7 +33,7 @@ class ForcedAligner():
 
         # Perform a second-pass with unaligned words
         if logging is not None:
-            logging.info("%d unaligned words (of %d)" % (len([X for X in words if X.not_found_in_audio()]), len(words)))
+            logging.info("%d unaligned words (of %d) for job %s" % (len([X for X in words if X.not_found_in_audio()]), len(words), self.uid))
 
         if progress_cb is not None:
             progress_cb({'status': 'ALIGNING'})
@@ -40,7 +41,7 @@ class ForcedAligner():
         words = multipass.realign(wavfile, words, self.ms, resources=self.resources, nthreads=self.nthreads, progress_cb=progress_cb)
 
         if logging is not None:
-            logging.info("after 2nd pass: %d unaligned words (of %d)" % (len([X for X in words if X.not_found_in_audio()]), len(words)))
+            logging.info("after 2nd pass: %d unaligned words (of %d) for job %s" % (len([X for X in words if X.not_found_in_audio()]), len(words), self.uid))
 
         words = AdjacencyOptimizer(words, duration).optimize()
 

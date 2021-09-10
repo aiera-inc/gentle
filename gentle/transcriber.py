@@ -6,12 +6,14 @@ from gentle import transcription
 
 from multiprocessing.pool import ThreadPool as Pool
 
+
 class MultiThreadedTranscriber:
-    def __init__(self, kaldi_queue, chunk_len=20, overlap_t=2, nthreads=4):
+    def __init__(self, uid, kaldi_queue, chunk_len=20, overlap_t=2, nthreads=4):
+        self.uid = uid
         self.chunk_len = chunk_len
         self.overlap_t = overlap_t
         self.nthreads = nthreads
-            
+
         self.kaldi_queue = kaldi_queue
 
     def transcribe(self, wavfile, progress_cb=None):
@@ -21,36 +23,37 @@ class MultiThreadedTranscriber:
 
         chunks = []
 
-
         def transcribe_chunk(idx):
-            wav_obj = wave.open(wavfile, 'rb')
-            start_t = idx * (self.chunk_len - self.overlap_t)
-            # Seek
-            wav_obj.setpos(int(start_t * wav_obj.getframerate()))
-            # Read frames
-            buf = wav_obj.readframes(int(self.chunk_len * wav_obj.getframerate()))
+            try:
+                wav_obj = wave.open(wavfile, 'rb')
+                start_t = idx * (self.chunk_len - self.overlap_t)
+                # Seek
+                wav_obj.setpos(int(start_t * wav_obj.getframerate()))
+                # Read frames
+                buf = wav_obj.readframes(int(self.chunk_len * wav_obj.getframerate()))
 
-            if len(buf) < 4000:
-                logging.info('Short segment - ignored %d' % (idx))
-                ret = []
-            else:
-                k = self.kaldi_queue.get()
-                k.push_chunk(buf)
-                ret = k.get_final()
-                # k.reset() (no longer needed)
-                self.kaldi_queue.put(k)
+                if len(buf) < 4000:
+                    logging.info('Short segment - ignored %d for job %s' % (idx, self.uid))
+                    ret = []
+                else:
+                    k = self.kaldi_queue.get()
+                    k.push_chunk(buf)
+                    ret = k.get_final()
+                    # k.reset() (no longer needed)
+                    self.kaldi_queue.put(k)
 
-            chunks.append({"start": start_t, "words": ret})
-            logging.info('%d/%d' % (len(chunks), n_chunks))
-            if progress_cb is not None:
-                progress_cb({"message": ' '.join([X['word'] for X in ret]),
-                             "percent": len(chunks) / float(n_chunks)})
-
+                chunks.append({"start": start_t, "words": ret})
+                logging.info('chunk %d of %d for job %s' % (len(chunks), n_chunks, self.uid))
+                if progress_cb is not None:
+                    progress_cb({"message": ' '.join([X['word'] for X in ret]),
+                                 "percent": len(chunks) / float(n_chunks)})
+            except:
+                logging.exception("error transcribing chunk at index %i for job %s", idx, self.uid)
 
         pool = Pool(min(n_chunks, self.nthreads))
         pool.map(transcribe_chunk, range(n_chunks))
         pool.close()
-        
+
         chunks.sort(key=lambda x: x['start'])
 
         # Combine chunks
@@ -85,17 +88,15 @@ class MultiThreadedTranscriber:
         # word in the audio.
         words.sort(key=lambda word: word.start)
         words.append(transcription.Word(word="__dummy__"))
-        words = [words[i] for i in range(len(words)-1) if not words[i].corresponds(words[i+1])]
+        words = [words[i] for i in range(len(words) - 1) if not words[i].corresponds(words[i + 1])]
 
         return words, duration
 
 
-if __name__=='__main__':
+if __name__ == '__main__':
     # full transcription
-    import json
     import sys
 
-    import logging
     logging.getLogger().setLevel('INFO')
 
     import gentle
@@ -105,10 +106,9 @@ if __name__=='__main__':
     resources = gentle.Resources()
 
     k_queue = kaldi_queue.build(resources, 3)
-    trans = MultiThreadedTranscriber(k_queue)
+    trans = MultiThreadedTranscriber("xxx", k_queue)
 
     with gentle.resampled(sys.argv[1]) as filename:
         words, duration = trans.transcribe(filename)
 
     open(sys.argv[2], 'w').write(transcription.Transcription(words=words).to_json())
-

@@ -218,7 +218,7 @@ class Transcriber():
                     self.update_status(uid, status, {k: v})
 
             if len(transcript.strip()) > 0:
-                trans = gentle.ForcedAligner(self.resources, transcript, nthreads=self.nthreads, **kwargs)
+                trans = gentle.ForcedAligner(uid, self.resources, transcript, nthreads=self.nthreads, **kwargs)
             elif self.full_transcriber.available:
                 trans = self.full_transcriber
             else:
@@ -252,7 +252,7 @@ class Transcriber():
 
 
 class TranscriptionsController(Resource):
-    def __init__(self, transcriber):
+    def __init__(self, transcriber: Transcriber):
         Resource.__init__(self)
         self.transcriber = transcriber
 

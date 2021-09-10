@@ -11,7 +11,7 @@ class Aligner(unittest.TestCase):
 
         resources = Resources()
         k3 = get_binary("ext/k3")
-        model = get_binary("exp/tdnn_7b_chain_online/final.mdl" )       
+        model = get_binary("exp/tdnn_7b_chain_online/final.mdl" )
 
         self.assertEqual(os.path.exists(self.audio), True)
         self.assertEqual(os.path.exists(k3), True)
@@ -26,11 +26,11 @@ class Aligner(unittest.TestCase):
         standard_kaldi.STDERR = subprocess.STDOUT
 
         resources = Resources()
-        align = ForcedAligner(resources, self.transcript, nthreads=1)
+        align = ForcedAligner("test", resources, self.transcript, nthreads=1)
 
         with resampled(self.audio, 5.0, 5.0) as filename:
             transcription = align.transcribe(filename)
             words = transcription.words
         self.assertEqual(words[0].word, "i")
         self.assertEqual(words[1].word, "am")
-        self.assertEqual(words[1].case, Word.SUCCESS)        
+        self.assertEqual(words[1].case, Word.SUCCESS)
