@@ -92,7 +92,11 @@ def realign(uid, wavfile, alignment, ms, resources, nthreads=4, progress_cb=None
         if progress_cb is not None:
             progress_cb({"percent": len(realignments) / float(len(to_realign))})
 
-    work(nthreads, realign, to_realign, timedelta(hours=1))
+    try:
+        work(nthreads, realign, to_realign, timedelta(hours=1))
+    except:
+        logging.exception("error aligning job %s in worker threads", uid)
+        raise
 
     # Sub in the replacements
     o_words = alignment

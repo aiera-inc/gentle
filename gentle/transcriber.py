@@ -47,7 +47,11 @@ class MultiThreadedTranscriber:
                 progress_cb({"message": ' '.join([X['word'] for X in ret]),
                              "percent": len(chunks) / float(n_chunks)})
 
-        work(min(n_chunks, self.nthreads), transcribe_chunk, range(n_chunks), timedelta(hours=1))
+        try:
+            work(min(n_chunks, self.nthreads), transcribe_chunk, range(n_chunks), timedelta(hours=1))
+        except Exception:
+            logging.exception("error transcribing job %s in worker threads", self.uid)
+            raise
 
         chunks.sort(key=lambda x: x['start'])
 
