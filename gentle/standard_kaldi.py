@@ -12,7 +12,7 @@ STDERR = subprocess.DEVNULL
 class Kaldi:
     def __init__(self, nnet_dir=None, hclg_path=None, proto_langdir=None):
         cmd = [EXECUTABLE_PATH]
-        
+
         if nnet_dir is not None:
             cmd.append(nnet_dir)
             cmd.append(hclg_path)
@@ -31,7 +31,7 @@ class Kaldi:
     def push_chunk(self, buf):
         # Wait until we're ready
         self._cmd("push-chunk")
-        
+
         cnt = int(len(buf)/2)
         self._cmd(str(cnt))
         self._p.stdin.write(buf) #arr.tostring())
@@ -74,19 +74,22 @@ class Kaldi:
             self._p.wait()
 
     def __del__(self):
-        self.stop()
+        try:
+            self.stop()
+        except Exception as e:
+            logging.warning("error stopping kaldi %s", str(e))
 
 if __name__=='__main__':
     import numm3
     import sys
 
     infile = sys.argv[1]
-    
+
     k = Kaldi()
 
     buf = numm3.sound2np(infile, nchannels=1, R=8000)
     print('loaded_buf', len(buf))
-    
+
     idx=0
     while idx < len(buf):
         k.push_chunk(buf[idx:idx+160000].tostring())
