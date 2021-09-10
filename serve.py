@@ -95,8 +95,9 @@ class Watchdog:
         with self.redis.pipeline() as p:
             server_tracked_keys_key = f'{self.prefix}:server:{server_id}:keys'
             for key in self.redis.smembers(server_tracked_keys_key):
+                key = key.decode()
                 logging.info('PURGING KEY %s, SERVER ID MISSING', key)
-                p.delete(key.decode())
+                p.delete(key)
 
             p.delete(server_tracked_keys_key)
             p.srem(self.servers_key, server_id)
@@ -218,7 +219,7 @@ class Transcriber():
                     self.update_status(uid, status, {k: v})
 
             if len(transcript.strip()) > 0:
-                trans = gentle.ForcedAligner(self.resources, transcript, nthreads=self.nthreads, **kwargs)
+                trans = gentle.ForcedAligner(uid, self.resources, transcript, nthreads=self.nthreads, **kwargs)
             elif self.full_transcriber.available:
                 trans = self.full_transcriber
             else:
@@ -252,7 +253,7 @@ class Transcriber():
 
 
 class TranscriptionsController(Resource):
-    def __init__(self, transcriber):
+    def __init__(self, transcriber: Transcriber):
         Resource.__init__(self)
         self.transcriber = transcriber
 

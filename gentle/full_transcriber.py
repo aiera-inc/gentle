@@ -13,7 +13,7 @@ class FullTranscriber():
         if not os.path.exists(resources.full_hclg_path): return
 
         queue = kaldi_queue.build(resources, nthreads=nthreads)
-        self.mtt = MultiThreadedTranscriber(queue, nthreads=nthreads)
+        self.mtt = MultiThreadedTranscriber("full", queue, nthreads=nthreads)
         self.available = True
 
     def transcribe(self, wavfile, progress_cb=None, logging=None):
