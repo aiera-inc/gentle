@@ -1,10 +1,10 @@
 import math
 import logging
 import wave
+from datetime import timedelta
 
 from gentle import transcription
-
-from multiprocessing.pool import ThreadPool as Pool
+from gentle.util import work
 
 
 class MultiThreadedTranscriber:
@@ -47,9 +47,7 @@ class MultiThreadedTranscriber:
                 progress_cb({"message": ' '.join([X['word'] for X in ret]),
                              "percent": len(chunks) / float(n_chunks)})
 
-        pool = Pool(min(n_chunks, self.nthreads))
-        pool.map(transcribe_chunk, range(n_chunks))
-        pool.close()
+        work(min(n_chunks, self.nthreads), transcribe_chunk, range(n_chunks), timedelta(hours=1))
 
         chunks.sort(key=lambda x: x['start'])
 

@@ -95,8 +95,9 @@ class Watchdog:
         with self.redis.pipeline() as p:
             server_tracked_keys_key = f'{self.prefix}:server:{server_id}:keys'
             for key in self.redis.smembers(server_tracked_keys_key):
+                key = key.decode()
                 logging.info('PURGING KEY %s, SERVER ID MISSING', key)
-                p.delete(key.decode())
+                p.delete(key)
 
             p.delete(server_tracked_keys_key)
             p.srem(self.servers_key, server_id)

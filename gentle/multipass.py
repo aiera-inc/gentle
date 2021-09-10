@@ -1,13 +1,14 @@
 import logging
-from multiprocessing.pool import ThreadPool as Pool
-import os
 import wave
+from datetime import timedelta
 
 from gentle import standard_kaldi
 from gentle import metasentence
 from gentle import language_model
 from gentle import diff_align
 from gentle import transcription
+from gentle.util import work
+
 
 def prepare_multipass(alignment):
     to_realign = []
@@ -91,9 +92,7 @@ def realign(uid, wavfile, alignment, ms, resources, nthreads=4, progress_cb=None
         if progress_cb is not None:
             progress_cb({"percent": len(realignments) / float(len(to_realign))})
 
-    pool = Pool(nthreads)
-    pool.map(realign, to_realign)
-    pool.close()
+    work(nthreads, realign, to_realign, timedelta(hours=1))
 
     # Sub in the replacements
     o_words = alignment
