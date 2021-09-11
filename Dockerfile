@@ -31,11 +31,12 @@ RUN DEBIAN_FRONTEND=noninteractive && \
 	apt-get clean
 
 ADD ext /gentle/ext
-RUN export MAKEFLAGS=' -j8' &&  cd /gentle/ext && \
+RUN export MAKEFLAGS=' -j8' && cd /gentle/ext && \
 	./install_kaldi.sh && \
 	make depend && make && rm -rf kaldi *.o
 
-ADD . /gentle
+ADD install_models.sh /gentle/install_models.sh
+ADD setup.py /gentle/setup.py
 RUN cd /gentle && ./install_models.sh
 RUN cd /gentle && pip3 install redis twisted && python3 setup.py develop
 

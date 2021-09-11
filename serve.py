@@ -6,7 +6,7 @@ import os
 import shutil
 import uuid
 import wave
-from datetime import timedelta
+from datetime import timedelta, datetime
 from urllib.parse import urlparse
 
 from redis import Redis
@@ -18,6 +18,7 @@ from twisted.web.static import File
 
 import gentle
 import logconfig
+from gentle.util import has_elapsed
 from gentle.util.cyst import Insist
 from gentle.util.paths import get_resource, get_datadir
 
@@ -139,7 +140,20 @@ class Transcriber():
     def get_status(self, uid):
         self.server_watchdog.purge()
         data = self.redis.get(f'gentle:job:{uid}')
-        return json.loads(data) if data else {}
+        if data:
+            status_dict = json.loads(data)
+            status = data.get("status")
+            updated = datetime.fromtimestamp(status_dict.get("updated", datetime.now().timestamp()))
+            if status in ("TRANSCRIBING", "ALIGNING") and has_elapsed(updated, timedelta(minutes=10)):
+                logging.error("job %s in status %s too long, marking error", uid, status)
+                status_dict = self.update_status(uid, status, {
+                    "status": "ERROR",
+                    "error": "Status in TRANSCRIBING/ALIGNING too long, marking error"
+                })
+
+            return status_dict
+        else:
+            return {}
 
     def get_alignment(self, uid):
         data = self.redis.get(f'gentle:job:{uid}:alignment')
@@ -150,12 +164,15 @@ class Transcriber():
 
     def update_status(self, uid, status: dict, updates: dict):
         status.update(updates)
+        status["updated"] = datetime.now().timestamp()
         self.redis.setex(f'gentle:job:{uid}', timedelta(days=1), json.dumps(status))
 
         if status.get('status') in ('ERROR', 'OK'):
             self.server_watchdog.untrack(f'gentle:job:{uid}')
         else:
             self.server_watchdog.track(f'gentle:job:{uid}')
+
+        return status
 
     def out_dir(self, uid):
         return os.path.join(self.data_dir, 'transcriptions', uid)
@@ -215,7 +232,7 @@ class Transcriber():
             })
 
             def on_progress(p):
-                for k,v in p.items():
+                for k, v in p.items():
                     self.update_status(uid, status, {k: v})
 
             if len(transcript.strip()) > 0:
@@ -231,6 +248,7 @@ class Transcriber():
                 return
 
             output = trans.transcribe(wavfile, progress_cb=on_progress, logging=logging)
+            logging.info("completed transcription/alignment of job %s", uid)
 
             # Save
             json_data = output.to_json(indent=2)
@@ -314,16 +332,26 @@ class TranscriptionsController(Resource):
                 req.setHeader("Content-Type", "application/json")
                 req.write(result.to_json(indent=2).encode())
                 req.finish()
+
             result_promise.addCallback(write_result)
-            result_promise.addErrback(lambda _: None) # ignore errors
+            result_promise.addErrback(lambda _: None)  # ignore errors
 
             req.notifyFinish().addErrback(lambda _: result_promise.cancel())
 
             return NOT_DONE_YET
+        else:
+            def on_error(e):
+                logging.error("transcription failed for job %s", uid)
+                self.redis.setex(f'gentle:job:{uid}', timedelta(days=1), json.dumps({
+                    "status": "ERROR"
+                }))
+
+            result_promise.addErrback(on_error)  # ignore errors
 
         req.setResponseCode(FOUND)
         req.setHeader(b"Location", "/transcriptions/%s" % (uid))
         return b''
+
 
 class LazyZipper(Insist):
     def __init__(self, cachedir, transcriber, uid):
@@ -332,9 +360,10 @@ class LazyZipper(Insist):
         Insist.__init__(self, os.path.join(cachedir, '%s.zip' % (uid)))
 
     def serialize_computation(self, outpath):
-        shutil.make_archive('.'.join(outpath.split('.')[:-1]), # We need to strip the ".zip" from the end
-                            "zip",                             # ...because `shutil.make_archive` adds it back
+        shutil.make_archive('.'.join(outpath.split('.')[:-1]),  # We need to strip the ".zip" from the end
+                            "zip",  # ...because `shutil.make_archive` adds it back
                             os.path.join(self.transcriber.out_dir(self.uid)))
+
 
 class TranscriptionZipper(Resource):
     def __init__(self, cachedir, transcriber):
@@ -357,9 +386,9 @@ class TranscriptionZipper(Resource):
         else:
             return Resource.getChild(self, path, req)
 
+
 def serve(port=8765, interface='0.0.0.0', installSignalHandlers=0, nthreads=4, ntranscriptionthreads=2,
           redis_url='redis://localhost:6379', data_dir=get_datadir('webdata')):
-
     logging.info("SERVE %d, %s, %d", port, interface, installSignalHandlers)
 
     if not os.path.exists(data_dir):
@@ -395,13 +424,13 @@ def serve(port=8765, interface='0.0.0.0', installSignalHandlers=0, nthreads=4, n
     reactor.run(installSignalHandlers=installSignalHandlers)
 
 
-if __name__=='__main__':
+if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(
         description='Align a transcript to audio by generating a new language model.')
     parser.add_argument('--host', default="0.0.0.0",
-                       help='host to run http server on')
+                        help='host to run http server on')
     parser.add_argument('--port', default=8765, type=int,
                         help='port number to run http server on')
     parser.add_argument('--nthreads', default=multiprocessing.cpu_count(), type=int,
