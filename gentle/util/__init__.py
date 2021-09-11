@@ -1,6 +1,6 @@
 # nothing here right now
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import timedelta, datetime
 from typing import Callable, Iterable
 
 
@@ -22,3 +22,9 @@ def work(nthreads, fn: Callable, items: Iterable, timeout: timedelta=None):
 
 class ProcessExit(Exception):
     pass
+
+
+def has_elapsed(dt: datetime, delta: timedelta, now: datetime = None) -> bool:
+    if now is None:
+        now = datetime.now()
+    return dt is not None and ((now - dt) >= delta)

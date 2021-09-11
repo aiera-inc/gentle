@@ -6,7 +6,7 @@ import os
 import shutil
 import uuid
 import wave
-from datetime import timedelta
+from datetime import timedelta, datetime
 from urllib.parse import urlparse
 
 from redis import Redis
@@ -18,6 +18,7 @@ from twisted.web.static import File
 
 import gentle
 import logconfig
+from gentle.util import has_elapsed
 from gentle.util.cyst import Insist
 from gentle.util.paths import get_resource, get_datadir
 
@@ -139,7 +140,20 @@ class Transcriber():
     def get_status(self, uid):
         self.server_watchdog.purge()
         data = self.redis.get(f'gentle:job:{uid}')
-        return json.loads(data) if data else {}
+        if data:
+            status_dict = json.loads(data)
+            status = data.get("status")
+            updated = datetime.fromtimestamp(status_dict.get("updated", datetime.now().timestamp()))
+            if status in ("TRANSCRIBING", "ALIGNING") and has_elapsed(updated, timedelta(minutes=10)):
+                logging.error("job %s in status %s too long, marking error", uid, status)
+                status_dict = self.update_status(uid, status, {
+                    "status": "ERROR",
+                    "error": "Status in TRANSCRIBING/ALIGNING too long, marking error"
+                })
+
+            return status_dict
+        else:
+            return {}
 
     def get_alignment(self, uid):
         data = self.redis.get(f'gentle:job:{uid}:alignment')
@@ -150,12 +164,15 @@ class Transcriber():
 
     def update_status(self, uid, status: dict, updates: dict):
         status.update(updates)
+        status["updated"] = datetime.now().timestamp()
         self.redis.setex(f'gentle:job:{uid}', timedelta(days=1), json.dumps(status))
 
         if status.get('status') in ('ERROR', 'OK'):
             self.server_watchdog.untrack(f'gentle:job:{uid}')
         else:
             self.server_watchdog.track(f'gentle:job:{uid}')
+
+        return status
 
     def out_dir(self, uid):
         return os.path.join(self.data_dir, 'transcriptions', uid)
