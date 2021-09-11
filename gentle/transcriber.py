@@ -2,19 +2,21 @@ import math
 import logging
 import wave
 from datetime import timedelta
+from typing import Callable
 
 from gentle import transcription
+from gentle.standard_kaldi import Kaldi
 from gentle.util import work
 
 
 class MultiThreadedTranscriber:
-    def __init__(self, uid, kaldi_queue, chunk_len=20, overlap_t=2, nthreads=4):
+    def __init__(self, uid, kaldi_factory: Callable, chunk_len=20, overlap_t=2, nthreads=4):
         self.uid = uid
         self.chunk_len = chunk_len
         self.overlap_t = overlap_t
         self.nthreads = nthreads
 
-        self.kaldi_queue = kaldi_queue
+        self.kaldi_factory = kaldi_factory
 
     def transcribe(self, wavfile, progress_cb=None):
         wav_obj = wave.open(wavfile, 'rb')
@@ -36,13 +38,18 @@ class MultiThreadedTranscriber:
                 logging.info('short segment - ignored index %i for job %s' % (idx, self.uid))
                 ret = []
             else:
-                k = self.kaldi_queue.get()
                 logging.info("starting kaldi transcription of index %i, job %s", idx, self.uid)
-                k.push_chunk(buf)
-                ret = k.get_final()
-                logging.info("finished kaldi transcription of index %i, job %s", idx, self.uid)
-                # k.reset() (no longer needed)
-                self.kaldi_queue.put(k)
+                k: Kaldi = self.kaldi_factory()
+
+                try:
+                    k.push_chunk(buf)
+                    ret = k.get_final()
+                    logging.info("finished kaldi transcription of index %i, job %s", idx, self.uid)
+                except:
+                    logging.exception("error reading from k3 process for job %s", self.uid)
+                    raise
+                finally:
+                    k.stop()
 
             chunks.append({"start": start_t, "words": ret})
             logging.info('chunk %d of %d for index %i job %s' % (len(chunks), n_chunks, idx, self.uid))
@@ -52,7 +59,8 @@ class MultiThreadedTranscriber:
 
         try:
             work(min(n_chunks, self.nthreads), transcribe_chunk, range(n_chunks), timedelta(hours=1))
-        except Exception:
+            logging.info("finished multi threaded transcribe work for job %s", self.uid)
+        except:
             logging.exception("error transcribing job %s in worker threads", self.uid)
             raise
 
