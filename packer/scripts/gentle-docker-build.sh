@@ -10,7 +10,7 @@ cd gentle
 git checkout packer # FIXME
 git submodule init
 git submodule update
-aws ecr get-login-password --region region | docker login --username AWS --password-stdin 121356702072.dkr.ecr.region.amazonaws.com
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 121356702072.dkr.ecr.us-east-1.amazonaws.com
 docker pull 121356702072.dkr.ecr.us-east-1.amazonaws.com/gentle:latest
 docker build -f Dockerfile -t 121356702072.dkr.ecr.us-east-1.amazonaws.com/gentle:latest .
 
