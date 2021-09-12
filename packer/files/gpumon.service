@@ -1,0 +1,6 @@
+[Unit]
+Description=Write GPU metrics to CloudWatch
+
+[Service]
+ExecStart=/usr/bin/python /root/gpumon.py
+Restart=on-failure
