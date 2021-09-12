@@ -52,8 +52,8 @@ class Kaldi:
                 self.finished = True
                 raise ChildProcessError("k3 process seems to have exited")
 
-            # poll for data on stdout for 60 seconds
-            if self._poll.poll(60000):
+            # poll for data on stdout for 10 minutes
+            if self._poll.poll(60000 * 10):
                 line = self._p.stdout.readline().decode()
             else:
                 # something's wrong, k3 stopped responding?
@@ -62,10 +62,11 @@ class Kaldi:
                 if self._p.poll() is None:
                     self._p.kill()
 
-                raise TimeoutError("k3 process has not produced data for 5 seconds, aborting")
+                raise TimeoutError("k3 process has not produced data for 10 minutes, aborting")
 
             if line.startswith("done"):
                 break
+
             parts = line.split(' / ')
             if line.startswith('word'):
                 wd = {}
