@@ -62,7 +62,7 @@ class Kaldi:
                 if self._p.poll() is None:
                     self._p.kill()
 
-                raise TimeoutError("k3 process has not produced data for 5 seconds, aborting")
+                raise TimeoutError("k3 process has not produced data for 60 seconds, aborting")
 
             if line.startswith("done"):
                 break
