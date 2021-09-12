@@ -52,7 +52,7 @@ class Kaldi:
                 self.finished = True
                 raise ChildProcessError("k3 process seems to have exited")
 
-            # poll for data on stdout for 60 seconds
+            # poll for data on stdout for 10 minutes
             if self._poll.poll(60000 * 10):
                 line = self._p.stdout.readline().decode()
             else:
