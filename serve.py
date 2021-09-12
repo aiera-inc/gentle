@@ -142,7 +142,7 @@ class Transcriber():
         data = self.redis.get(f'gentle:job:{uid}')
         if data:
             status_dict = json.loads(data)
-            status = data.get("status")
+            status = status_dict.get("status")
             updated = datetime.fromtimestamp(status_dict.get("updated", datetime.now().timestamp()))
             if status in ("TRANSCRIBING", "ALIGNING") and has_elapsed(updated, timedelta(minutes=10)):
                 logging.error("job %s in status %s too long, marking error", uid, status)
