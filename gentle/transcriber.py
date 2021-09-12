@@ -45,8 +45,8 @@ class MultiThreadedTranscriber:
                     k.push_chunk(buf)
                     ret = k.get_final()
                     logging.info("finished kaldi transcription of index %i, job %s", idx, self.uid)
-                except:
-                    logging.exception("error reading from k3 process for job %s", self.uid)
+                except BaseException as e:
+                    logging.error("error reading from k3 process for transcribe job %s (%s)", self.uid, str(e))
                     raise
                 finally:
                     k.stop()
@@ -60,9 +60,13 @@ class MultiThreadedTranscriber:
         try:
             work(min(n_chunks, self.nthreads), transcribe_chunk, range(n_chunks), timedelta(hours=1))
             logging.info("finished multi threaded transcribe work for job %s", self.uid)
-        except:
-            logging.exception("error transcribing job %s in worker threads", self.uid)
-            raise
+        except BaseException as e:
+            if (len(chunks) / float(n_chunks)) > .95:
+                logging.error("error transcribing job %s in worker threads"
+                              ">95% complete so not aborting", self.uid, str(e))
+            else:
+                logging.exception("error transcribing job %s in worker threads", self.uid)
+                raise
 
         chunks.sort(key=lambda x: x['start'])
 
