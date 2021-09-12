@@ -1,10 +1,10 @@
-from gentle import diff_align
-from gentle import kaldi_queue
+from gentle import diff_align, standard_kaldi
 from gentle import language_model
 from gentle import metasentence
 from gentle import multipass
 from gentle.transcriber import MultiThreadedTranscriber
 from gentle.transcription import Transcription
+
 
 class ForcedAligner():
 
@@ -17,31 +17,35 @@ class ForcedAligner():
         self.ms = metasentence.MetaSentence(transcript, resources.vocab)
         ks = self.ms.get_kaldi_sequence()
         gen_hclg_filename = language_model.make_bigram_language_model(ks, resources.proto_langdir, **kwargs)
-        self.queue = kaldi_queue.build(resources, hclg_path=gen_hclg_filename, nthreads=nthreads)
-        self.mtt = MultiThreadedTranscriber(uid, self.queue, nthreads=nthreads)
+
+        def create_kaldi():
+            return standard_kaldi.Kaldi(
+                resources.nnet_gpu_path,
+                gen_hclg_filename,
+                resources.proto_langdir)
+
+        self.mtt = MultiThreadedTranscriber(uid, create_kaldi, nthreads=nthreads)
 
     def transcribe(self, wavfile, progress_cb=None, logging=None):
         words, duration = self.mtt.transcribe(wavfile, progress_cb=progress_cb)
-
-        # Clear queue (would this be gc'ed?)
-        for i in range(self.nthreads):
-            k = self.queue.get()
-            k.stop()
 
         # Align words
         words = diff_align.align(words, self.ms, **self.kwargs)
 
         # Perform a second-pass with unaligned words
         if logging is not None:
-            logging.info("%d unaligned words (of %d) for job %s" % (len([X for X in words if X.not_found_in_audio()]), len(words), self.uid))
+            logging.info("%d unaligned words (of %d) for job %s" % (
+            len([X for X in words if X.not_found_in_audio()]), len(words), self.uid))
 
         if progress_cb is not None:
             progress_cb({'status': 'ALIGNING'})
 
-        words = multipass.realign(self.uid, wavfile, words, self.ms, resources=self.resources, nthreads=self.nthreads, progress_cb=progress_cb)
+        words = multipass.realign(self.uid, wavfile, words, self.ms, resources=self.resources, nthreads=self.nthreads,
+                                  progress_cb=progress_cb)
 
         if logging is not None:
-            logging.info("after 2nd pass: %d unaligned words (of %d) for job %s" % (len([X for X in words if X.not_found_in_audio()]), len(words), self.uid))
+            logging.info("after 2nd pass: %d unaligned words (of %d) for job %s" % (
+            len([X for X in words if X.not_found_in_audio()]), len(words), self.uid))
 
         words = AdjacencyOptimizer(words, duration).optimize()
 
@@ -49,7 +53,6 @@ class ForcedAligner():
 
 
 class AdjacencyOptimizer():
-
     '''
     Sometimes there are ambiguous possible placements of not-found-in-audio
     words.  The word-based diff doesn't take into account intra-word timings
@@ -108,8 +111,8 @@ class AdjacencyOptimizer():
         return self.duration
 
     def find_subseq(self, i, j, p, n):
-        for k in range(i, j-n+1):
-            for m in range(p, p+n):
+        for k in range(i, j - n + 1):
+            for m in range(p, p + n):
                 if self.words[k].word != self.words[m].word:
                     break
             else:
@@ -123,11 +126,11 @@ class AdjacencyOptimizer():
         # construct adjacent candidate words and their gap relative to their
         # opposite neighbors
         if side == "left":
-            p, q = (i-n, i)
+            p, q = (i - n, i)
             if p < 0: return False
             opp_gap = self.tstart(p) - self.tend(p)
         else:
-            p, q = (j, j+n)
+            p, q = (j, j + n)
             if q > len(self.words): return False
             opp_gap = self.tstart(q) - self.tend(q)
 
@@ -142,7 +145,7 @@ class AdjacencyOptimizer():
 
         # swap subsequences at p and k
         for m in range(0, n):
-            self.words[k+m].swap_alignment(self.words[p+m])
+            self.words[k + m].swap_alignment(self.words[p + m])
 
         return True
 
@@ -150,7 +153,7 @@ class AdjacencyOptimizer():
         '''Given an out-of-audio sequence at [i,j), looks for an opportunity to
         swap a sub-sequence with adjacent words at [p, i) or [j, p)'''
 
-        for n in reversed(range(1, (j-i)+1)): # consider larger moves first
+        for n in reversed(range(1, (j - i) + 1)):  # consider larger moves first
             if self.swap_adjacent_if_better(i, j, n, "left"): return True
             if self.swap_adjacent_if_better(i, j, n, "right"): return True
 
@@ -167,6 +170,6 @@ class AdjacencyOptimizer():
                     i -= 1
 
             else:
-                i = j # skip past this sequence
+                i = j  # skip past this sequence
 
         return self.words

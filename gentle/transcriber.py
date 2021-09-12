@@ -2,19 +2,21 @@ import math
 import logging
 import wave
 from datetime import timedelta
+from typing import Callable
 
 from gentle import transcription
+from gentle.standard_kaldi import Kaldi
 from gentle.util import work
 
 
 class MultiThreadedTranscriber:
-    def __init__(self, uid, kaldi_queue, chunk_len=20, overlap_t=2, nthreads=4):
+    def __init__(self, uid, kaldi_factory: Callable, chunk_len=20, overlap_t=2, nthreads=4):
         self.uid = uid
         self.chunk_len = chunk_len
         self.overlap_t = overlap_t
         self.nthreads = nthreads
 
-        self.kaldi_queue = kaldi_queue
+        self.kaldi_factory = kaldi_factory
 
     def transcribe(self, wavfile, progress_cb=None):
         wav_obj = wave.open(wavfile, 'rb')
@@ -24,6 +26,7 @@ class MultiThreadedTranscriber:
         chunks = []
 
         def transcribe_chunk(idx):
+            logging.info("opening audio file index %i for transcription, job %s", idx, self.uid)
             wav_obj = wave.open(wavfile, 'rb')
             start_t = idx * (self.chunk_len - self.overlap_t)
             # Seek
@@ -32,26 +35,38 @@ class MultiThreadedTranscriber:
             buf = wav_obj.readframes(int(self.chunk_len * wav_obj.getframerate()))
 
             if len(buf) < 4000:
-                logging.info('Short segment - ignored %d for job %s' % (idx, self.uid))
+                logging.info('short segment - ignored index %i for job %s' % (idx, self.uid))
                 ret = []
             else:
-                k = self.kaldi_queue.get()
-                k.push_chunk(buf)
-                ret = k.get_final()
-                # k.reset() (no longer needed)
-                self.kaldi_queue.put(k)
+                logging.info("starting kaldi transcription of index %i, job %s", idx, self.uid)
+                k: Kaldi = self.kaldi_factory()
+
+                try:
+                    k.push_chunk(buf)
+                    ret = k.get_final()
+                    logging.info("finished kaldi transcription of index %i, job %s", idx, self.uid)
+                except BaseException as e:
+                    logging.error("error reading from k3 process for transcribe job %s (%s)", self.uid, str(e))
+                    raise
+                finally:
+                    k.stop()
 
             chunks.append({"start": start_t, "words": ret})
-            logging.info('chunk %d of %d for job %s' % (len(chunks), n_chunks, self.uid))
+            logging.info('chunk %d of %d for index %i job %s' % (len(chunks), n_chunks, idx, self.uid))
             if progress_cb is not None:
                 progress_cb({"message": ' '.join([X['word'] for X in ret]),
                              "percent": len(chunks) / float(n_chunks)})
 
         try:
             work(min(n_chunks, self.nthreads), transcribe_chunk, range(n_chunks), timedelta(hours=1))
-        except Exception:
-            logging.exception("error transcribing job %s in worker threads", self.uid)
-            raise
+            logging.info("finished multi threaded transcribe work for job %s", self.uid)
+        except BaseException as e:
+            if (len(chunks) / float(n_chunks)) > .95:
+                logging.error("error transcribing job %s in worker threads"
+                              ">95% complete so not aborting", self.uid, str(e))
+            else:
+                logging.exception("error transcribing job %s in worker threads", self.uid)
+                raise
 
         chunks.sort(key=lambda x: x['start'])
 

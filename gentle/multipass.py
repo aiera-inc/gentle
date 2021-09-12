@@ -15,7 +15,7 @@ def prepare_multipass(alignment):
     last_aligned_word = None
     cur_unaligned_words = []
 
-    for wd_idx,wd in enumerate(alignment):
+    for wd_idx, wd in enumerate(alignment):
         if wd.not_found_in_audio():
             cur_unaligned_words.append(wd)
         elif wd.success():
@@ -57,31 +57,44 @@ def realign(uid, wavfile, alignment, ms, resources, nthreads=4, progress_cb=None
         duration = end_t - start_t
         # XXX: the minimum length seems bigger now (?)
         if duration < 0.75 or duration > 60:
-            logging.debug("cannot realign %d words with duration %f" % (len(chunk['words']), duration))
+            logging.debug("cannot realign %d words with duration %f, job %s" % (len(chunk['words']), duration, uid))
             return
 
         # Create a language model
         offset_offset = chunk['words'][0].startOffset
         chunk_len = chunk['words'][-1].endOffset - offset_offset
-        chunk_transcript = ms.raw_sentence[offset_offset:offset_offset+chunk_len].encode("utf-8")
+        chunk_transcript = ms.raw_sentence[offset_offset:offset_offset + chunk_len].encode("utf-8")
         chunk_ms = metasentence.MetaSentence(chunk_transcript, resources.vocab)
         chunk_ks = chunk_ms.get_kaldi_sequence()
 
         chunk_gen_hclg_filename = language_model.make_bigram_language_model(chunk_ks, resources.proto_langdir)
+
+        logging.info("creating kaldi instance for alignment, job %s", uid)
         k = standard_kaldi.Kaldi(
             resources.nnet_gpu_path,
             chunk_gen_hclg_filename,
             resources.proto_langdir)
 
+        logging.info("opening audio for chunk alignment, job %s", uid)
         wav_obj = wave.open(wavfile, 'rb')
         wav_obj.setpos(int(start_t * wav_obj.getframerate()))
         buf = wav_obj.readframes(int(duration * wav_obj.getframerate()))
 
-        k.push_chunk(buf)
-        ret = [transcription.Word(**wd) for wd in k.get_final()]
-        k.stop()
+        logging.info("starting audio chunk alignment, job %s", uid)
 
+        try:
+            k.push_chunk(buf)
+            ret = [transcription.Word(**wd) for wd in k.get_final()]
+        except BaseException as e:
+            logging.error("error reading from k3 process for align job %s (%s)", uid, str(e))
+            raise
+        finally:
+            k.stop()
+
+        logging.info("finished audio chunk alignment, job %s", uid)
+        logging.info("starting diff-alignment, job %s", uid)
         word_alignment = diff_align.align(ret, chunk_ms)
+        logging.info("finished diff-alignment, job %s", uid)
 
         for wd in word_alignment:
             wd.shift(time=start_t, offset=offset_offset)
@@ -94,17 +107,23 @@ def realign(uid, wavfile, alignment, ms, resources, nthreads=4, progress_cb=None
 
     try:
         work(nthreads, realign, to_realign, timedelta(hours=1))
-    except:
-        logging.exception("error aligning job %s in worker threads", uid)
-        raise
+        logging.info("finished multi threaded align work for job %s", uid)
+    except BaseException as e:
+        if (len(realignments) / float(len(to_realign))) > .95:
+            logging.error("error aligning job %s in worker threads"
+                          ">95% complete so not aborting", uid, str(e))
+            return
+        else:
+            logging.error("error reading from k3 process for align job %s (%s)", uid, str(e))
+            raise
 
     # Sub in the replacements
     o_words = alignment
     for ret in realignments:
         st_idx = o_words.index(ret["chunk"]["words"][0])
-        end_idx= o_words.index(ret["chunk"]["words"][-1])+1
-        #logging.debug('splice in: "%s' % (str(ret["words"])))
-        #logging.debug('splice out: "%s' % (str(o_words[st_idx:end_idx])))
+        end_idx = o_words.index(ret["chunk"]["words"][-1]) + 1
+        # logging.debug('splice in: "%s' % (str(ret["words"])))
+        # logging.debug('splice out: "%s' % (str(o_words[st_idx:end_idx])))
         o_words = o_words[:st_idx] + ret["words"] + o_words[end_idx:]
 
     return o_words

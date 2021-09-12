@@ -1,3 +1,4 @@
+import select
 import subprocess
 import os
 import logging
@@ -8,6 +9,7 @@ EXECUTABLE_PATH = get_binary("ext/k3")
 logger = logging.getLogger(__name__)
 
 STDERR = subprocess.DEVNULL
+
 
 class Kaldi:
     def __init__(self, nnet_dir=None, hclg_path=None, proto_langdir=None):
@@ -22,6 +24,9 @@ class Kaldi:
         self._p = subprocess.Popen(cmd,
                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                    stderr=STDERR, bufsize=0)
+        self._poll = select.poll()
+        self._poll.register(self._p.stdout, select.POLLIN)
+
         self.finished = False
 
     def _cmd(self, c):
@@ -32,9 +37,9 @@ class Kaldi:
         # Wait until we're ready
         self._cmd("push-chunk")
 
-        cnt = int(len(buf)/2)
+        cnt = int(len(buf) / 2)
         self._cmd(str(cnt))
-        self._p.stdin.write(buf) #arr.tostring())
+        self._p.stdin.write(buf)  # arr.tostring())
         status = self._p.stdout.readline().strip().decode()
         return status == 'ok'
 
@@ -42,9 +47,26 @@ class Kaldi:
         self._cmd("get-final")
         words = []
         while True:
-            line = self._p.stdout.readline().decode()
+            # see if the process has exited
+            if self._p.poll() is not None:
+                self.finished = True
+                raise ChildProcessError("k3 process seems to have exited")
+
+            # poll for data on stdout for 2 minutes
+            if self._poll.poll(60000 * 2):
+                line = self._p.stdout.readline().decode()
+            else:
+                # something's wrong, k3 stopped responding?
+                self.finished = True
+                # if the process still thinks it is alive, kill it
+                if self._p.poll() is None:
+                    self._p.kill()
+
+                raise TimeoutError("k3 process has not produced data for 2 minutes, aborting")
+
             if line.startswith("done"):
                 break
+
             parts = line.split(' / ')
             if line.startswith('word'):
                 wd = {}
@@ -79,7 +101,8 @@ class Kaldi:
         except Exception as e:
             logging.warning("error stopping kaldi %s", str(e))
 
-if __name__=='__main__':
+
+if __name__ == '__main__':
     import numm3
     import sys
 
@@ -90,8 +113,8 @@ if __name__=='__main__':
     buf = numm3.sound2np(infile, nchannels=1, R=8000)
     print('loaded_buf', len(buf))
 
-    idx=0
+    idx = 0
     while idx < len(buf):
-        k.push_chunk(buf[idx:idx+160000].tostring())
+        k.push_chunk(buf[idx:idx + 160000].tostring())
         print(k.get_final())
         idx += 160000
