@@ -9,6 +9,6 @@ yum -y install packer
 git clone https://github.com/aiera-inc/gentle
 cd gentle
 git checkout packer
-packer init packer/docker-build.pkr.hcl
+PACKER_LOG=1 packer init packer/docker-build.pkr.hcl
 PACKER_LOG=1 packer build packer/docker-build.pkr.hcl
 

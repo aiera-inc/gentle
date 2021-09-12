@@ -8,10 +8,12 @@ packer {
 }
 
 source "docker" "gentle" {
-  image     = "121356702072.dkr.ecr.us-east-1.amazonaws.com/gentle:latest"
-  commit    = true
-  ecr_login = true
-  login     = "https://121356702072.dkr.ecr.us-east-1.amazonaws.com/"
+  image  = "121356702072.dkr.ecr.us-east-1.amazonaws.com/gentle:latest"
+  commit = true
+
+  ecr_login    = true
+  login        = true
+  login_server = "https://121356702072.dkr.ecr.us-east-1.amazonaws.com/"
 }
 
 build {
