@@ -63,7 +63,7 @@ class MultiThreadedTranscriber:
         except BaseException as e:
             if (len(chunks) / float(n_chunks)) > .95:
                 logging.error("error transcribing job %s in worker threads"
-                              ">95% complete so not aborting (%s)", self.uid, str(e))
+                              "> 95 percent complete so not aborting (%s)", self.uid, str(e))
             else:
                 logging.exception("error transcribing job %s in worker threads (%s)", self.uid, str(e))
                 raise
