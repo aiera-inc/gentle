@@ -42,7 +42,7 @@ ADD install_models.sh /gentle/install_models.sh
 ADD setup.py /gentle/setup.py
 RUN cd /gentle && ./install_models.sh
 ADD . /gentle
-RUN cd /gentle && pip3 install redis twisted && python3 setup.py develop
+RUN cd /gentle && python3 setup.py develop
 
 EXPOSE 8765
 
