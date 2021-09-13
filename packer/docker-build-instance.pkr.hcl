@@ -35,7 +35,7 @@ build {
   }
   # run as ec2-user
   provisioner "shell" {
-    scripts         = ["./scripts/gentle-docker-build.sh"]
+    scripts = ["./scripts/gentle-docker-build.sh"]
   }
 }
 

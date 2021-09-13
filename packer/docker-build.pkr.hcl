@@ -18,5 +18,20 @@ source "docker" "gentle" {
 
 build {
   sources = ["source.docker.gentle"]
-}
 
+  post-processors {
+    post-processor "docker-tag" {
+      repository = "121356702072.dkr.ecr.us-east-1.amazonaws.com/gentle"
+      tag        = ["latest"]
+    }
+    post-processor "docker-push" {}
+  }
+
+  #post-processors {
+  #  post-processor "docker-tag" {
+  #    repository = "121356702072.dkr.ecr.us-east-1.amazonaws.com/gentle"
+  #    tag        = ["0.7"]
+  #  }
+  #  post-processor "docker-push" {}
+  #}
+}
