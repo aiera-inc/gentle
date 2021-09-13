@@ -111,7 +111,7 @@ def realign(uid, wavfile, alignment, ms, resources, nthreads=4, progress_cb=None
     except BaseException as e:
         if (len(realignments) / float(len(to_realign))) > .95:
             logging.error("error aligning job %s in worker threads"
-                          ">95% complete so not aborting", uid, str(e))
+                          ">95% complete so not aborting (%s)", uid, str(e))
             return
         else:
             logging.error("error reading from k3 process for align job %s (%s)", uid, str(e))
