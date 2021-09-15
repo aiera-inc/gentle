@@ -86,7 +86,7 @@ def realign(uid, wavfile, alignment, ms, resources, nthreads=4, progress_cb=None
             k.push_chunk(buf)
             ret = [transcription.Word(**wd) for wd in k.get_final()]
         except BaseException as e:
-            logging.error("error reading from k3 process for align job %s (%s)", uid, str(e))
+            logging.warning("error reading from k3 process for align job %s (%s)", uid, str(e))
             raise
         finally:
             k.stop()
