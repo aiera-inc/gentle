@@ -146,7 +146,7 @@ class Transcriber():
             updated = datetime.fromtimestamp(status_dict.get("updated", datetime.now().timestamp()))
             if status in ("TRANSCRIBING", "ALIGNING") and has_elapsed(updated, timedelta(minutes=10)):
                 logging.error("job %s in status %s too long, marking error", uid, status)
-                status_dict = self.update_status(uid, status, {
+                status_dict = self.update_status(uid, status_dict, {
                     "status": "ERROR",
                     "error": "Status in TRANSCRIBING/ALIGNING too long, marking error"
                 })
