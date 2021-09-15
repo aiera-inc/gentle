@@ -46,7 +46,7 @@ class MultiThreadedTranscriber:
                     ret = k.get_final()
                     logging.info("finished kaldi transcription of index %i, job %s", idx, self.uid)
                 except BaseException as e:
-                    logging.error("error reading from k3 process for transcribe job %s (%s)", self.uid, str(e))
+                    logging.warning("error reading from k3 process for transcribe job %s (%s)", self.uid, str(e))
                     raise
                 finally:
                     k.stop()
