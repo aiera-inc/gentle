@@ -69,18 +69,14 @@ def realign(uid, wavfile, alignment, ms, resources, nthreads=4, progress_cb=None
 
         chunk_gen_hclg_filename = language_model.make_bigram_language_model(chunk_ks, resources.proto_langdir)
 
-        logging.info("creating kaldi instance for alignment, job %s", uid)
         k = standard_kaldi.Kaldi(
             resources.nnet_gpu_path,
             chunk_gen_hclg_filename,
             resources.proto_langdir)
 
-        logging.info("opening audio for chunk alignment, job %s", uid)
         wav_obj = wave.open(wavfile, 'rb')
         wav_obj.setpos(int(start_t * wav_obj.getframerate()))
         buf = wav_obj.readframes(int(duration * wav_obj.getframerate()))
-
-        logging.info("starting audio chunk alignment, job %s", uid)
 
         try:
             k.push_chunk(buf)
@@ -91,10 +87,7 @@ def realign(uid, wavfile, alignment, ms, resources, nthreads=4, progress_cb=None
         finally:
             k.stop()
 
-        logging.info("finished audio chunk alignment, job %s", uid)
-        logging.info("starting diff-alignment, job %s", uid)
         word_alignment = diff_align.align(ret, chunk_ms)
-        logging.info("finished diff-alignment, job %s", uid)
 
         for wd in word_alignment:
             wd.shift(time=start_t, offset=offset_offset)
