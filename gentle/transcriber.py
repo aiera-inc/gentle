@@ -26,7 +26,6 @@ class MultiThreadedTranscriber:
         chunks = []
 
         def transcribe_chunk(idx):
-            logging.info("opening audio file index %i for transcription, job %s", idx, self.uid)
             wav_obj = wave.open(wavfile, 'rb')
             start_t = idx * (self.chunk_len - self.overlap_t)
             # Seek
@@ -38,13 +37,11 @@ class MultiThreadedTranscriber:
                 logging.info('short segment - ignored index %i for job %s' % (idx, self.uid))
                 ret = []
             else:
-                logging.info("starting kaldi transcription of index %i, job %s", idx, self.uid)
                 k: Kaldi = self.kaldi_factory()
 
                 try:
                     k.push_chunk(buf)
                     ret = k.get_final()
-                    logging.info("finished kaldi transcription of index %i, job %s", idx, self.uid)
                 except BaseException as e:
                     logging.warning("error reading from k3 process for transcribe job %s (%s)", self.uid, str(e))
                     raise
@@ -52,7 +49,6 @@ class MultiThreadedTranscriber:
                     k.stop()
 
             chunks.append({"start": start_t, "words": ret})
-            logging.info('chunk %d of %d for index %i job %s' % (len(chunks), n_chunks, idx, self.uid))
             if progress_cb is not None:
                 progress_cb({"message": ' '.join([X['word'] for X in ret]),
                              "percent": len(chunks) / float(n_chunks)})
